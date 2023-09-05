@@ -73,7 +73,8 @@ namespace Dalamud.FindAnything
         private bool isHeldTimeout = false;
         private bool isHeld = false;
 
-        private int timeSinceLastShift = 0;
+        private int framesSinceLastShift = 0;
+        private DateTime lastShiftTime = DateTime.UnixEpoch;
         private bool shiftArmed = false;
         private bool shiftOk = false;
 
@@ -138,6 +139,7 @@ namespace Dalamud.FindAnything
 
         private static List<HistoryEntry> history = new();
         private const int HistoryMax = 5;
+        internal const int DefaultWeight = 100;
 
         private interface ISearchResult
         {
@@ -627,6 +629,41 @@ namespace Dalamud.FindAnything
                 if (ReferenceEquals(this, obj)) return true;
                 if (obj.GetType() != this.GetType()) return false;
                 return Equals((PluginSettingsSearchResult)obj);
+            }
+
+            public override int GetHashCode()
+            {
+                return this.Plugin.GetHashCode();
+            }
+        }
+
+        private class PluginInterfaceSearchResult : ISearchResult, IEquatable<PluginInterfaceSearchResult>
+        {
+            public string CatName => "Other Plugins";
+            public string Name { get; set; }
+            public TextureWrap? Icon => TexCache.PluginInstallerIcon;
+            public int Score { get; set; }
+            public bool CloseFinder => true;
+            public DalamudReflector.PluginEntry Plugin { get; set; }
+
+            public void Selected()
+            {
+                Plugin.OpenMainUi();
+            }
+
+            public bool Equals(PluginInterfaceSearchResult? other)
+            {
+                if (ReferenceEquals(null, other)) return false;
+                if (ReferenceEquals(this, other)) return true;
+                return this.Plugin.Name.Equals(other.Plugin.Name);
+            }
+
+            public override bool Equals(object? obj)
+            {
+                if (ReferenceEquals(null, obj)) return false;
+                if (ReferenceEquals(this, obj)) return true;
+                if (obj.GetType() != this.GetType()) return false;
+                return Equals((PluginInterfaceSearchResult)obj);
             }
 
             public override int GetHashCode()
@@ -1299,41 +1336,57 @@ namespace Dalamud.FindAnything
             {
                 CloseFinder();
             }
-            else
+            else if (!finderOpen)
             {
+                var shiftDown = Input.IsDown(Configuration.ShiftShiftKey);
+
+                // KeyDown #1 fired
+                if (shiftDown && !shiftArmed) {
+                    shiftArmed = true;
+                    framesSinceLastShift = 0; // Reset frame count
+                    lastShiftTime = DateTime.UtcNow; // Register lastShiftTime at KeyDown
+                }
+
+                // Await KeyUp #1
+                if (shiftArmed) {
+                    framesSinceLastShift++; // Count frames after KeyDown
+                    // KeyUp #1 fired
+                    if (!shiftDown) {
+                        shiftOk = true;
+                    }
+                }
+
+                // Await KeyDown #2
+                if (!shiftDown || !shiftOk)
+                    return;
+
+                // KeyDown #2 fired, so clean up key state (but may re-arm later if delay was too long)
+                shiftArmed = false;
+                shiftOk = false;
+
                 switch (Configuration.Open)
                 {
                     case Configuration.OpenMode.ShiftShift:
-                        var shiftDown = Input.IsDown(Configuration.ShiftShiftKey);
-
-                        if (shiftDown && !shiftArmed)
-                        {
-                            shiftArmed = true;
+                        if (Configuration.ShiftShiftUnit == Configuration.DoubleTapUnit.Frames) {
+                            if (framesSinceLastShift <= Configuration.ShiftShiftDelay) {
+                                OpenFinder();
+                            }
+                            else {
+                                // Delay was too long, so count this as KeyDown #1 instead
+                                shiftArmed = true;
+                                framesSinceLastShift = 0;
+                            }
                         }
-
-                        if (!shiftDown && shiftArmed)
-                        {
-                            shiftOk = true;
+                        else if (Configuration.ShiftShiftUnit == Configuration.DoubleTapUnit.Milliseconds) {
+                            if ((DateTime.UtcNow - lastShiftTime).TotalMilliseconds <= Configuration.ShiftShiftDelay) {
+                                OpenFinder();
+                            }
+                            else {
+                                // Delay was too long, so count this as KeyDown #1 instead
+                                shiftArmed = true;
+                                lastShiftTime = DateTime.UtcNow;
+                            }
                         }
-
-                        if (shiftOk && !shiftDown)
-                        {
-                            timeSinceLastShift++;
-                        }
-                        else if (shiftDown && shiftOk && timeSinceLastShift < Configuration.ShiftShiftDelay)
-                        {
-                            OpenFinder();
-                            timeSinceLastShift = 0;
-                            shiftArmed = false;
-                            shiftOk = false;
-                        }
-                        else if (shiftOk && timeSinceLastShift > Configuration.ShiftShiftDelay)
-                        {
-                            timeSinceLastShift = 0;
-                            shiftArmed = false;
-                            shiftOk = false;
-                        }
-
                         break;
                     case Configuration.OpenMode.Combo:
                         var mod = Configuration.ComboModifier == VirtualKey.NO_KEY || Input.IsDown(Configuration.ComboModifier);
@@ -1421,8 +1474,8 @@ namespace Dalamud.FindAnything
             {
                 case SearchMode.Top:
                 {
-                    foreach (var setting in Configuration.Order)
-                    {
+                    foreach (var setting in Configuration.Order) {
+                        var weight = Configuration.SearchWeights.GetValueOrDefault(setting, DefaultWeight);
                         switch (setting)
                         {
                             case Configuration.SearchSetting.Duty:
@@ -1462,7 +1515,7 @@ namespace Dalamud.FindAnything
                                         {
                                             cResults.Add(new DutySearchResult
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 CatName = row.ContentType?.Value?.Name ?? "Duty",
                                                 DataKey = cfc.Key,
                                                 Name = cfc.Value.Display,
@@ -1487,7 +1540,7 @@ namespace Dalamud.FindAnything
 
                                             cResults.Add(new ContentRouletteSearchResult()
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 DataKey = (byte) contentRoulette.RowId,
                                                 Name = name,
                                             });
@@ -1516,7 +1569,7 @@ namespace Dalamud.FindAnything
                                         if (score > 0)
                                             cResults.Add(new AetheryteSearchResult
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 Name = aetheryteName,
                                                 Data = aetheryte,
                                                 Icon = TexCache.AetheryteIcon,
@@ -1540,7 +1593,7 @@ namespace Dalamud.FindAnything
                                         var terriName = SearchDatabase.GetString<TerritoryType>(closestMarketBoard.TerritoryId);
                                         cResults.Add(new AetheryteSearchResult
                                         {
-                                            Score = marketScore,
+                                            Score = marketScore * weight,
                                             Name = "Closest Market Board",
                                             Data = closestMarketBoard,
                                             Icon = TexCache.AetheryteIcon,
@@ -1553,7 +1606,7 @@ namespace Dalamud.FindAnything
                                         var terriName = SearchDatabase.GetString<TerritoryType>(closestStrikingDummy.TerritoryId);
                                         cResults.Add(new AetheryteSearchResult
                                         {
-                                            Score = dummyScore,
+                                            Score = dummyScore * weight,
                                             Name = "Closest Striking Dummy",
                                             Data = closestStrikingDummy,
                                             Icon = TexCache.AetheryteIcon,
@@ -1580,7 +1633,7 @@ namespace Dalamud.FindAnything
                                         {
                                             cResults.Add(new MainCommandSearchResult
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 CommandId = mainCommand.Key,
                                                 Name = mainCommand.Value.Display,
                                                 Icon = TexCache.MainCommandIcons[mainCommand.Key]
@@ -1616,7 +1669,7 @@ namespace Dalamud.FindAnything
                                             if (score > 0)
                                                 cResults.Add(new GeneralActionSearchResult
                                                 {
-                                                    Score = score,
+                                                    Score = score * weight,
                                                     Name = generalAction.Value.Display,
                                                     Icon = TexCache.GeneralActionIcons[generalAction.Key]
                                                 });
@@ -1643,7 +1696,7 @@ namespace Dalamud.FindAnything
                                         {
                                             cResults.Add(new EmoteSearchResult
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 Name = text.Display,
                                                 SlashCommand = slashCmd.Command.RawString,
                                                 Icon = TexCache.EmoteIcons[emoteRow.RowId]
@@ -1665,12 +1718,23 @@ namespace Dalamud.FindAnything
                                         var score = matcher.Matches(plugin.Name.Downcase(normalizeKana));
                                         if (score > 0)
                                         {
-                                            cResults.Add(new PluginSettingsSearchResult
-                                            {
-                                                Score = score,
-                                                Name = plugin.Name,
-                                                Plugin = plugin,
-                                            });
+                                            if (plugin.HasMainUi) {
+                                                cResults.Add(new PluginInterfaceSearchResult
+                                                {
+                                                    Score = score * weight,
+                                                    Name = plugin.Name + " Interface",
+                                                    Plugin = plugin,
+                                                });
+                                            }
+
+                                            if (plugin.HasConfigUi) {
+                                                cResults.Add(new PluginSettingsSearchResult
+                                                {
+                                                    Score = score * weight,
+                                                    Name = plugin.Name + " Settings",
+                                                    Plugin = plugin,
+                                                });
+                                            }
                                         }
                                     }
 
@@ -1683,7 +1747,7 @@ namespace Dalamud.FindAnything
                                             {
                                                 cResults.Add(new IpcSearchResult
                                                 {
-                                                    Score = score,
+                                                    Score = score * weight,
                                                     CatName = plugin.Key,
                                                     Name = ipcBinding.Display,
                                                     Guid = ipcBinding.Guid,
@@ -1716,7 +1780,7 @@ namespace Dalamud.FindAnything
                                         {
                                             cResults.Add(new GearsetSearchResult
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 Gearset = gearset,
                                             });
                                         }
@@ -1738,7 +1802,7 @@ namespace Dalamud.FindAnything
 
                                             cResults.Add(new CraftingRecipeResult
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 Recipe = recipe,
                                                 Name = recipeSearch.Value.Display,
                                                 CraftType = recipe.CraftType.Value,
@@ -1772,7 +1836,7 @@ namespace Dalamud.FindAnything
 
                                             cResults.Add(new GatheringItemResult()
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 Item = gather,
                                                 Name = gatherSearch.Value.Display,
                                                 Icon = tex,
@@ -1809,7 +1873,7 @@ namespace Dalamud.FindAnything
                                         {
                                             cResults.Add(new MountResult
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 Mount = mount,
                                             });
                                         }
@@ -1832,7 +1896,7 @@ namespace Dalamud.FindAnything
                                         {
                                             cResults.Add(new MinionResult
                                             {
-                                                Score = score,
+                                                Score = score * weight,
                                                 Minion = minion,
                                             });
                                         }
@@ -1840,14 +1904,19 @@ namespace Dalamud.FindAnything
                                 }
                                 break;
                             case Configuration.SearchSetting.MacroLinks:
-                                foreach (var macroLink in Configuration.MacroLinks)
+                                var macroLinks = Configuration.MacroLinks.AsEnumerable();
+                                if (Configuration.MacroLinksSearchDirection == Configuration.MacroSearchDirection.TopToBottom) {
+                                    macroLinks = macroLinks.Reverse();
+                                }
+
+                                foreach (var macroLink in macroLinks)
                                 {
                                     var score = matcher.Matches(macroLink.SearchName.Downcase(normalizeKana));
                                     if (score > 0)
                                     {
                                         cResults.Add(new MacroLinkSearchResult
                                         {
-                                            Score = score,
+                                            Score = score * weight,
                                             Entry = macroLink,
                                         });
                                     }
@@ -1861,7 +1930,7 @@ namespace Dalamud.FindAnything
                                     {
                                         cResults.Add(new InternalSearchResult
                                         {
-                                            Score = score,
+                                            Score = score * weight,
                                             Kind = kind
                                         });
                                     }
@@ -1981,7 +2050,7 @@ namespace Dalamud.FindAnything
 
                         var score = matcher.Matches("dn farm");
                         if (score > 0)
-                            cResults.Add(new GameSearchResult { Score = score });
+                            cResults.Add(new GameSearchResult { Score = score * DefaultWeight });
                     }
                 }
                     break;
