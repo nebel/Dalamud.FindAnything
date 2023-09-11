@@ -25,6 +25,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Logging;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Ipc.Exceptions;
+using Dalamud.Plugin.Services;
 using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
@@ -55,6 +56,7 @@ namespace Dalamud.FindAnything
         [PluginService] public static Dalamud.Game.ClientState.Conditions.Condition Condition { get; private set; }
         [PluginService] public static AetheryteList Aetherytes { get; private set; }
         [PluginService] public static SigScanner TargetScanner { get; private set; }
+        [PluginService] public static ITextureProvider TextureProvider { get; private set; }
 
         public static TextureCache TexCache { get; private set; }
         private static SearchDatabase SearchDatabase { get; set; }
@@ -1300,7 +1302,7 @@ namespace Dalamud.FindAnything
             TeleportIpc = PluginInterface.GetIpcSubscriber<uint, byte, bool>("Teleport");
             ShowTeleportChatMessageIpc = PluginInterface.GetIpcSubscriber<bool>("Teleport.ChatMessage");
 
-            TexCache = TextureCache.Load(null, Data);
+            TexCache = TextureCache.Load(Data, TextureProvider);
             SearchDatabase = SearchDatabase.Load(ClientState.ClientLanguage);
             AetheryteManager = AetheryteManager.Load();
 
