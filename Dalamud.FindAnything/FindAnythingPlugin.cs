@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using Dalamud.Game;
 using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -11,16 +10,13 @@ using System.Net;
 using System.Numerics;
 using System.Threading.Tasks;
 using System.Web;
-using Dalamud.Data;
 using Dalamud.FindAnything.Game;
-using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.Aetherytes;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Keys;
-using Dalamud.Game.Gui;
-using Dalamud.Game.Gui.Toast;
 using Dalamud.Interface;
 using Dalamud.Interface.Colors;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Dalamud.Logging;
 using Dalamud.Plugin.Ipc;
@@ -45,18 +41,18 @@ namespace Dalamud.FindAnything
         private const string commandName = "/wotsit";
 
         [PluginService] public static DalamudPluginInterface PluginInterface { get; private set; }
-        [PluginService] public static CommandManager CommandManager { get; private set; }
+        [PluginService] public static ICommandManager CommandManager { get; private set; }
         public static Configuration Configuration { get; set; }
-        [PluginService] public static Framework Framework { get; private set; }
-        [PluginService] public static DataManager Data { get; private set; }
-        [PluginService] public static KeyState Keys { get; private set; }
-        [PluginService] public static ClientState ClientState { get; private set; }
-        [PluginService] public static ChatGui ChatGui { get; private set; }
-        [PluginService] public static ToastGui ToastGui { get; private set; }
-        [PluginService] public static Dalamud.Game.ClientState.Conditions.Condition Condition { get; private set; }
-        [PluginService] public static AetheryteList Aetherytes { get; private set; }
-        [PluginService] public static SigScanner TargetScanner { get; private set; }
+        [PluginService] public static IFramework Framework { get; private set; }
+        [PluginService] public static IDataManager Data { get; private set; }
+        [PluginService] public static IKeyState Keys { get; private set; }
+        [PluginService] public static IClientState ClientState { get; private set; }
+        [PluginService] public static IChatGui ChatGui { get; private set; }
+        [PluginService] public static IToastGui ToastGui { get; private set; }
+        [PluginService] public static ICondition Condition { get; private set; }
+        [PluginService] public static IAetheryteList Aetherytes { get; private set; }
         [PluginService] public static ITextureProvider TextureProvider { get; private set; }
+        [PluginService] public static IPluginLog Log { get; private set; }
 
         public static TextureCache TexCache { get; private set; }
         private static SearchDatabase SearchDatabase { get; set; }
@@ -410,7 +406,7 @@ namespace Dalamud.FindAnything
                 }
                 catch (IpcNotReadyError)
                 {
-                    PluginLog.Error("Teleport IPC not found.");
+                    Log.Error("Teleport IPC not found.");
                     UserError("To use Aetherytes within Wotsit, you must install the \"Teleporter\" plugin.");
                 }
             }
@@ -566,7 +562,7 @@ namespace Dalamud.FindAnything
             searchState.SetBaseSearchModeAndTerm(newMode, string.Empty);
             selectedIndex = 0;
             results = UpdateSearchResults(searchState.CreateCriteria());
-            PluginLog.Information($"Now in mode: {newMode}");
+            Log.Information($"Now in mode: {newMode}");
         }
 
         public class GeneralActionSearchResult : ISearchResult, IEquatable<GeneralActionSearchResult>
@@ -700,12 +696,15 @@ namespace Dalamud.FindAnything
                 switch (Entry.Kind)
                 {
                     case Configuration.MacroEntry.MacroEntryKind.Id:
-                        RaptureShellModule.Instance->ExecuteMacro((Entry.Shared ? RaptureMacroModule.Instance->Shared : RaptureMacroModule.Instance->Individual)[Entry.Id]);
+                        var macros = (RaptureMacroModule.Macro*)(Entry.Shared
+                            ? RaptureMacroModule.Instance()->Shared
+                            : RaptureMacroModule.Instance()->Individual);
+                        RaptureShellModule.Instance()->ExecuteMacro(&macros[Entry.Id]);
                         break;
                     case Configuration.MacroEntry.MacroEntryKind.SingleLine:
                         if (!Entry.Line.StartsWith("/") || Entry.Line.Length > 100)
                         {
-                            PluginLog.Error("Invalid slash command:" + Entry.Line);
+                            Log.Error("Invalid slash command:" + Entry.Line);
                             return;
                         }
 
@@ -1324,7 +1323,7 @@ namespace Dalamud.FindAnything
             new Expression("1+1").Evaluate(); // Warm up evaluator, takes like 100ms
         }
 
-        private void FrameworkOnUpdate(Framework framework)
+        private void FrameworkOnUpdate(IFramework framework)
         {
             if (Input.Disabled || Input == null)
                 return;
@@ -1957,7 +1956,7 @@ namespace Dalamud.FindAnything
                                         var num = (int)args.EvaluateParameters()[0];
                                         args.Result = MathAux.GetNeededExpForLevel((uint)num);
                                         args.HasResult = true;
-                                        PluginLog.Information($"exp called with {num} was {args.Result}",
+                                        Log.Information($"exp called with {num} was {args.Result}",
                                             Array.Empty<object>());
                                     }
                                     else if (args.Parameters.Length == 0)
@@ -2030,7 +2029,7 @@ namespace Dalamud.FindAnything
                             }
                             catch (ArgumentException ex)
                             {
-                                PluginLog.Verbose(ex, "Expression evaluate error", Array.Empty<object>());
+                                Log.Verbose(ex, "Expression evaluate error", Array.Empty<object>());
                                 if (criteria.CleanString.Any(x => x is >= '0' and <= '9'))
                                     cResults.Add(new ExpressionResult
                                     {
@@ -2041,7 +2040,7 @@ namespace Dalamud.FindAnything
                         }
                         else
                         {
-                            PluginLog.Verbose("Expression parse error: " + expression.Error, Array.Empty<object>());
+                            Log.Verbose("Expression parse error: " + expression.Error, Array.Empty<object>());
                             if (criteria.CleanString.Any(x => x is >= '0' and <= '9'))
                                 cResults.Add(new ExpressionResult
                                 {
@@ -2221,7 +2220,7 @@ namespace Dalamud.FindAnything
 
 #if DEBUG
             sw.Stop();
-            PluginLog.Debug($"Took: {sw.ElapsedMilliseconds}ms");
+            Log.Debug($"Took: {sw.ElapsedMilliseconds}ms");
 #endif
 
             if (criteria.MatchMode != MatchMode.Simple)
@@ -2267,7 +2266,7 @@ namespace Dalamud.FindAnything
             if (Configuration.HintLevel != Configuration.HintKind.HintMath + 1)
             {
                 var nextHint = Configuration.HintLevel++;
-                PluginLog.Information($"Hint: {nextHint}");
+                Log.Information($"Hint: {nextHint}");
                 results = new ISearchResult[]
                 {
                     new HintResult
@@ -2282,18 +2281,18 @@ namespace Dalamud.FindAnything
                 var historyResults = new List<ISearchResult>();
                 var newHistory = new List<HistoryEntry>();
                 
-                PluginLog.Verbose("{Num} histories:", history.Count);
+                Log.Verbose("{Num} histories:", history.Count);
 
                 foreach (var historyEntry in history)
                 {
                     var searched = UpdateSearchResults(historyEntry.SearchCriteria);
-                    PluginLog.Verbose(" => {Name}, {Type}, {ResultsNow}, {Term}", historyEntry.Result?.CatName, historyEntry.Result?.GetType()?.FullName, searched?.Length, historyEntry.SearchCriteria.MatchString);
+                    Log.Verbose(" => {Name}, {Type}, {ResultsNow}, {Term}", historyEntry.Result?.CatName, historyEntry.Result?.GetType()?.FullName, searched?.Length, historyEntry.SearchCriteria.MatchString);
                     
                     
                     var first = searched?.FirstOrDefault(x => x.Equals(historyEntry.Result));
                     if (first == null)
                     {
-                        PluginLog.Verbose("Couldn't find {Term} anymore, removing from history", historyEntry.SearchCriteria.MatchString);
+                        Log.Verbose("Couldn't find {Term} anymore, removing from history", historyEntry.SearchCriteria.MatchString);
                         continue;
                     }
 
@@ -2397,7 +2396,7 @@ namespace Dalamud.FindAnything
 
             if (!ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows) || ImGui.IsKeyDown(ImGuiHelpers.VirtualKeyToImGuiKey(VirtualKey.ESCAPE)))
             {
-                PluginLog.Verbose("Focus loss or escape");
+                Log.Verbose("Focus loss or escape");
                 closeFinder = true;
             }
 
@@ -2536,7 +2535,7 @@ namespace Dalamud.FindAnything
                         if (ImGui.Selectable($"{result.Name}###faEntry{i}", i == selectedIndex, ImGuiSelectableFlags.None,
                                 new Vector2(childSize.X, textSize.Y)))
                         {
-                            PluginLog.Information("Selectable click");
+                            Log.Information("Selectable click");
                             clickedIndex = i;
                         }
 

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using Dalamud.Data;
 using Dalamud.Logging;
 using Dalamud.Plugin.Services;
 using ImGuiScene;
@@ -43,7 +42,7 @@ namespace Dalamud.FindAnything
             return textureProvider.GetTextureFromGame(path);
         }
 
-        private TextureCache(DataManager data, ITextureProvider textureProvider)
+        private TextureCache(IDataManager data, ITextureProvider textureProvider)
         {
             this.textureProvider = textureProvider;
 
@@ -125,7 +124,7 @@ namespace Dalamud.FindAnything
                     cjIcons.Add(classJob.RowId, icon);
             }
             ClassJobIcons = cjIcons;
-            PluginLog.Information(ClassJobIcons.Count + " class jobs loaded.");
+            FindAnythingPlugin.Log.Information(ClassJobIcons.Count + " class jobs loaded.");
 
             var mountIcons = new Dictionary<uint, TextureWrap>();
             foreach (var mount in data.GetExcelSheet<Mount>()!)
@@ -186,7 +185,7 @@ namespace Dalamud.FindAnything
                 ExtraIcons[iconId] = tex;
         }
 
-        public static TextureCache Load(DataManager data, ITextureProvider textureProvider) => new(data, textureProvider);
+        public static TextureCache Load(IDataManager data, ITextureProvider textureProvider) => new(data, textureProvider);
 
         public void Dispose()
         {

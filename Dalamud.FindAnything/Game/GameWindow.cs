@@ -10,6 +10,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Internal.Notifications;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Dalamud.Logging;
 using ImGuiNET;
@@ -264,7 +265,7 @@ public class GameWindow : Window, IDisposable
     {
         var timeSinceSave = DateTimeOffset.Now - state.LastSaved;
         var numHoursSpent = Math.Floor(timeSinceSave.TotalHours);
-        PluginLog.Verbose($"{numHoursSpent} hours since last save");
+        FindAnythingPlugin.Log.Verbose($"{numHoursSpent} hours since last save");
         if (numHoursSpent > 0 && this.state.NumNoses.TryGetValue(NoseKind.Eternity, out var numEternityDogs))
         {
             var earnedRestedDn = (ETERNITY_DN_PER_HOUR * numHoursSpent) * numEternityDogs;
@@ -376,7 +377,7 @@ public class GameWindow : Window, IDisposable
                 this.thiefActive = true;
                 this.thiefMessageDismissed = false;
                 this.thiefWillStealAt = DateTimeOffset.Now.AddSeconds(random.Next(8, 15));
-                PluginLog.Information($"[DN] Thief triggered! Steals: {this.thiefWillSteal} at {this.thiefWillStealAt}");
+                FindAnythingPlugin.Log.Information($"[DN] Thief triggered! Steals: {this.thiefWillSteal} at {this.thiefWillStealAt}");
             }
 
             this.state.LastSaved = DateTimeOffset.Now;

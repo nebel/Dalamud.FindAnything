@@ -40,7 +40,7 @@ public unsafe class Input
     public Input()
     {
         try { isTextInputActivePtr = *(IntPtr*)((IntPtr)AtkStage.GetSingleton() + 0x28) + 0x188E; } // Located in AtkInputManager
-        catch { PluginLog.LogError("Failed loading textActiveBoolPtr"); }
+        catch { FindAnythingPlugin.Log.Error("Failed loading textActiveBoolPtr"); }
     }
 
     public void Update()
