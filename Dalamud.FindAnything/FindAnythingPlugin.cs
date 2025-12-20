@@ -20,8 +20,6 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using Dalamud.Plugin.Ipc;
-using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Plugin.Services;
 using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
@@ -63,10 +61,11 @@ namespace Dalamud.FindAnything
 
         public static TextureCache TexCache { get; private set; }
         private static SearchDatabase SearchDatabase { get; set; }
-        private static AetheryteManager AetheryteManager { get; set; }
+        public static AetheryteManager AetheryteManager { get; set; }
         private static GameStateCache GameStateCache { get; set; }
         private static Input? Input { get; set; }
         private static IpcSystem Ipc { get; set; }
+        private static Teleporter Teleporter { get; set; }
 
         private bool finderOpen = false;
         private static SearchState searchState;
@@ -398,25 +397,7 @@ namespace Dalamud.FindAnything
 
             public void Selected()
             {
-                try
-                {
-                    var didTeleport = TeleportIpc.InvokeFunc(Data.AetheryteId, Data.SubIndex);
-                    var showTeleportChatMessage = ShowTeleportChatMessageIpc.InvokeFunc();
-
-                    if (!didTeleport)
-                    {
-                        UserError("Cannot teleport in this situation.");
-                    }
-                    else if (showTeleportChatMessage)
-                    {
-                        ChatGui.Print($"Teleporting to {Name}...");
-                    }
-                }
-                catch (IpcNotReadyError)
-                {
-                    Log.Error("Teleport IPC not found.");
-                    UserError("To use Aetherytes within Wotsit, you must install the \"Teleporter\" plugin.");
-                }
+                Teleporter.Teleport(Data);
             }
 
             public bool Equals(AetheryteSearchResult? other)
@@ -440,7 +421,7 @@ namespace Dalamud.FindAnything
             }
         }
 
-        private static void UserError(string error)
+        internal static void UserError(string error)
         {
             ChatGui.PrintError(error);
             ToastGui.ShowError(error);
@@ -1380,9 +1361,6 @@ namespace Dalamud.FindAnything
 
         private static ISearchResult[]? results;
 
-        public static ICallGateSubscriber<uint, byte, bool> TeleportIpc { get; private set; }
-        public static ICallGateSubscriber<bool> ShowTeleportChatMessageIpc {get; private set; }
-
         public FindAnythingPlugin()
         {
             Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
@@ -1398,6 +1376,8 @@ namespace Dalamud.FindAnything
             }
             
             Configuration.Initialize(PluginInterface);
+
+            Teleporter = new Teleporter(PluginInterface);
 
             CommandManager.AddHandler(commandName, new CommandInfo(OnCommand)
             {
@@ -1420,9 +1400,6 @@ namespace Dalamud.FindAnything
             {
                 settingsWindow.IsOpen = true;
             };
-
-            TeleportIpc = PluginInterface.GetIpcSubscriber<uint, byte, bool>("Teleport");
-            ShowTeleportChatMessageIpc = PluginInterface.GetIpcSubscriber<bool>("Teleport.ChatMessage");
 
             TexCache = TextureCache.Load(Data, TextureProvider);
             SearchDatabase = SearchDatabase.Load(ClientState.ClientLanguage);
