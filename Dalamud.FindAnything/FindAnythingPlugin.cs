@@ -1403,7 +1403,7 @@ namespace Dalamud.FindAnything
 
             TexCache = TextureCache.Load(Data, TextureProvider);
             SearchDatabase = SearchDatabase.Load(ClientState.ClientLanguage);
-            AetheryteManager = AetheryteManager.Load();
+            AetheryteManager = new AetheryteManager(ClientState.ClientLanguage, PluginInterface.Sanitizer);
 
             windowSystem = new WindowSystem("wotsit");
             settingsWindow = new SettingsWindow(this) { IsOpen = false };
