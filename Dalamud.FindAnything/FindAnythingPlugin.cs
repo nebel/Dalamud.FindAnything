@@ -66,6 +66,7 @@ namespace Dalamud.FindAnything
         private static Input? Input { get; set; }
         private static IpcSystem Ipc { get; set; }
         private static Teleporter Teleporter { get; set; }
+        private static Normalizer Normalizer { get; set; }
 
         private bool finderOpen = false;
         private static SearchState searchState;
@@ -1378,6 +1379,7 @@ namespace Dalamud.FindAnything
             Configuration.Initialize(PluginInterface);
 
             Teleporter = new Teleporter(PluginInterface);
+            Normalizer = new Normalizer(ClientState.ClientLanguage);
 
             CommandManager.AddHandler(commandName, new CommandInfo(OnCommand)
             {
@@ -1402,7 +1404,7 @@ namespace Dalamud.FindAnything
             };
 
             TexCache = TextureCache.Load(Data, TextureProvider);
-            SearchDatabase = SearchDatabase.Load(ClientState.ClientLanguage);
+            SearchDatabase = SearchDatabase.Load(Normalizer);
             AetheryteManager = new AetheryteManager(ClientState.ClientLanguage, PluginInterface.Sanitizer);
 
             windowSystem = new WindowSystem("wotsit");
@@ -1416,7 +1418,7 @@ namespace Dalamud.FindAnything
             Input = new Input();
             Ipc = new IpcSystem(PluginInterface, Data, TexCache);
 
-            searchState = new SearchState(Configuration);
+            searchState = new SearchState(Configuration, Normalizer);
 
             Expression.CacheEnabled = true;
             new Expression("1+1").Evaluate(); // Warm up evaluator, takes like 100ms
@@ -1693,7 +1695,7 @@ namespace Dalamud.FindAnything
                                         var aetheryteName = AetheryteManager.GetAetheryteName(aetheryte);
                                         var terriName = SearchDatabase.GetString<TerritoryType>(aetheryte.TerritoryId);
                                         var score = matcher.MatchesAny(
-                                            aetheryteName.Downcase(normalizeKana).Replace("'", string.Empty),
+                                            Normalizer.Searchable(aetheryteName, normalizeKana),
                                             terriName.Searchable
                                         );
 
@@ -1709,8 +1711,8 @@ namespace Dalamud.FindAnything
                                             });
                                         }
 
-                                        marketScore = matcher.Matches("Closest Market Board".ToLowerInvariant());
-                                        innScore = matcher.Matches("Closest Inn Room".ToLowerInvariant());
+                                        marketScore = matcher.Matches(Normalizer.SearchableAscii("Closest Market Board"));
+                                        innScore = matcher.Matches(Normalizer.SearchableAscii("Closest Inn Room"));
                                         if (AetheryteManager.IsMarketBoardAetheryte(aetheryte.AetheryteId))
                                         {
                                             if (Configuration.AetheryteShortcuts.HasFlag(Configuration.AetheryteAdditionalShortcut.MarketBoard) && marketScore > 0)
@@ -1723,7 +1725,7 @@ namespace Dalamud.FindAnything
                                             }
                                         }
 
-                                        dummyScore = matcher.Matches("Closest Striking Dummy".ToLowerInvariant());
+                                        dummyScore = matcher.Matches(Normalizer.SearchableAscii("Closest Striking Dummy"));
                                         if (Configuration.AetheryteShortcuts.HasFlag(Configuration.AetheryteAdditionalShortcut.StrikingDummy) &&
                                             dummyScore > 0 &&  AetheryteManager.IsStrikingDummyAetheryte(aetheryte.AetheryteId))
                                         {
@@ -1902,7 +1904,7 @@ namespace Dalamud.FindAnything
                                         if (plugin.HasMainUi)
                                         {
                                             var name = $"Open {plugin.Name} Interface";
-                                            var score = matcher.Matches(name.Downcase(normalizeKana));
+                                            var score = matcher.Matches(Normalizer.Searchable(name, normalizeKana));
 
                                             if (score > 0)
                                             {
@@ -1918,7 +1920,7 @@ namespace Dalamud.FindAnything
                                         if (plugin.HasConfigUi)
                                         {
                                             var name = $"Open {plugin.Name} Settings";
-                                            var score = matcher.Matches(name.Downcase(normalizeKana));
+                                            var score = matcher.Matches(Normalizer.Searchable(name, normalizeKana));
 
                                             if (score > 0)
                                             {
@@ -1965,9 +1967,9 @@ namespace Dalamud.FindAnything
                                         var cjRow = cj.GetRow(gearset.ClassJob)!;
 
                                         var score = matcher.MatchesAny(
-                                            gearset.Name.Downcase(normalizeKana),
-                                            cjRow.Name.ToText().Downcase(normalizeKana),
-                                            cjRow.Abbreviation.ToText().ToLowerInvariant(),
+                                            Normalizer.Searchable(gearset.Name, normalizeKana),
+                                            Normalizer.Searchable(cjRow.Name, normalizeKana),
+                                            Normalizer.SearchableAscii(cjRow.Abbreviation),
                                             ClassJobRolesMap[gearset.ClassJob]
                                         );
                                         if (score > 0)
@@ -2060,7 +2062,7 @@ namespace Dalamud.FindAnything
                                         if (!GameStateCache.UnlockedMountKeys.Contains(mount.RowId))
                                             continue;
 
-                                        var score = matcher.Matches(mount.Singular.ToText().Downcase(normalizeKana));
+                                        var score = matcher.Matches(Normalizer.Searchable(mount.Singular, normalizeKana));
                                         if (score > 0)
                                         {
                                             cResults.Add(new MountResult
@@ -2085,7 +2087,7 @@ namespace Dalamud.FindAnything
 
                                         var name = SeStringEvaluator.EvaluateObjStr(ObjectKind.Companion, minion.RowId,
                                             ClientState.ClientLanguage);
-                                        var score = matcher.Matches(name.Downcase(normalizeKana));
+                                        var score = matcher.Matches(Normalizer.Searchable(name, normalizeKana));
                                         if (score > 0)
                                         {
                                             cResults.Add(new MinionResult
@@ -2106,7 +2108,7 @@ namespace Dalamud.FindAnything
 
                                 foreach (var macroLink in macroLinks)
                                 {
-                                    var score = matcher.Matches(macroLink.SearchName.Downcase(normalizeKana));
+                                    var score = matcher.Matches(Normalizer.Searchable(macroLink.SearchName, normalizeKana));
                                     if (score > 0)
                                     {
                                         cResults.Add(new MacroLinkSearchResult
@@ -2120,7 +2122,7 @@ namespace Dalamud.FindAnything
                             case Configuration.SearchSetting.Internal:
                                 foreach (var kind in Enum.GetValues<InternalSearchResult.InternalSearchResultKind>())
                                 {
-                                    var score = matcher.Matches(InternalSearchResult.GetNameForKind(kind).ToLowerInvariant());
+                                    var score = matcher.Matches(Normalizer.SearchableAscii(InternalSearchResult.GetNameForKind(kind)));
                                     if (score > 0)
                                     {
                                         cResults.Add(new InternalSearchResult
@@ -2139,7 +2141,7 @@ namespace Dalamud.FindAnything
                                         if (!GameStateCache.UnlockedFashionAccessoryKeys.Contains(ornament.RowId))
                                             continue;
 
-                                        var score = matcher.Matches(ornament.Singular.ToText().Downcase(normalizeKana));
+                                        var score = matcher.Matches(Normalizer.Searchable(ornament.Singular, normalizeKana));
                                         if (score > 0)
                                         {
                                             cResults.Add(new FashionAccessoryResult
@@ -2163,7 +2165,7 @@ namespace Dalamud.FindAnything
                                             continue;
 
                                         var uiData = mcGuffin.UIData.Value!; // Already checked validity in UnlockedCollectionKeys
-                                        var score = matcher.Matches(uiData.Name.ToText().Downcase(normalizeKana));
+                                        var score = matcher.Matches(Normalizer.Searchable(uiData.Name, normalizeKana));
                                         if (score > 0)
                                         {
                                             cResults.Add(new CollectionResult
@@ -2391,7 +2393,7 @@ namespace Dalamud.FindAnything
                             if (kind == WikiSiteChoicerResult.SiteChoice.TeamCraft && wikiResult.DataCat == WikiSearchResult.DataCategory.Item)
                                 continue;
 
-                            var score = matcher.Matches(kind.ToString().ToLowerInvariant());
+                            var score = matcher.Matches(Normalizer.SearchableAscii(kind.ToString()));
                             if (score > 0)
                             {
                                 cResults.Add(new WikiSiteChoicerResult
